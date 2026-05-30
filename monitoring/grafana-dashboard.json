@@ -1,0 +1,34 @@
+{
+  "title": "Smart Interview Intelligence",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Request Count",
+      "targets": [
+        {
+          "expr": "request_count"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency",
+      "targets": [
+        {
+          "expr": "latency"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Prediction Time",
+      "targets": [
+        {
+          "expr": "prediction_time"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}
