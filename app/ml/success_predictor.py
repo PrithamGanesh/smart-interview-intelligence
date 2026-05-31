@@ -23,12 +23,30 @@ def predict_success_probability(
     features = [[skill_score, experience, _education_score(education)]]
     if model is not None:
         probability = float(model.predict_proba(features)[0][1]) * 100
-        return {"success_probability": round(probability, 2), "model": get_settings().success_model_name}
+        return {
+            "success_probability": round(probability, 2),
+            "model": get_settings().success_model_name,
+            "model_version": model_path or "external-artifact",
+            "feature_contributions": {
+                "skill_score": round(skill_score, 2),
+                "experience": round(experience, 2),
+                "education": round(_education_score(education) * 100, 2),
+            },
+        }
 
     experience_component = min(experience / 5.0, 1.0) * 25
     education_component = _education_score(education) * 15
     probability = min(skill_score * 0.60 + experience_component + education_component, 100)
-    return {"success_probability": round(probability, 2), "model": "heuristic-fallback"}
+    return {
+        "success_probability": round(probability, 2),
+        "model": "heuristic-fallback",
+        "model_version": "heuristic-v1",
+        "feature_contributions": {
+            "skill_score": round(skill_score * 0.60, 2),
+            "experience": round(experience_component, 2),
+            "education": round(education_component, 2),
+        },
+    }
 
 
 def _load_xgboost_model(model_path: Optional[str]):

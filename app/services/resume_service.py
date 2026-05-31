@@ -50,5 +50,8 @@ class ResumeService:
     def list_resumes(self) -> list[Resume]:
         return store.list_resumes()
 
+    def delete_resume(self, resume_id: str) -> None:
+        store.delete_resume(resume_id)
+
 
 resume_service = ResumeService()

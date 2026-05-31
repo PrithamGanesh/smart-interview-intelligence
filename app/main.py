@@ -1,10 +1,14 @@
 """FastAPI application entry point."""
 
+import json
+import logging
 import time
+from collections import defaultdict, deque
+from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.routes import router
@@ -15,6 +19,9 @@ from app.core.exceptions import register_exception_handlers
 settings = get_settings()
 REQUEST_COUNT = 0
 REQUEST_LATENCY_SECONDS: list[float] = []
+RATE_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
+logger = logging.getLogger("smart_interview")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 app = FastAPI(
     title=settings.project_name,
@@ -29,12 +36,49 @@ class MetricsMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         global REQUEST_COUNT
         start = time.perf_counter()
+        request_id = request.headers.get("x-request-id", str(uuid4()))
         response = await call_next(request)
         REQUEST_COUNT += 1
-        REQUEST_LATENCY_SECONDS.append(time.perf_counter() - start)
+        elapsed = time.perf_counter() - start
+        REQUEST_LATENCY_SECONDS.append(elapsed)
+        response.headers["x-request-id"] = request_id
+        logger.info(
+            json.dumps(
+                {
+                    "event": "http_request",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                    "latency_ms": round(elapsed * 1000, 2),
+                }
+            )
+        )
         return response
 
 
+class GuardrailMiddleware(BaseHTTPMiddleware):
+    """Apply optional API key auth and a lightweight per-client rate limit."""
+
+    async def dispatch(self, request, call_next):
+        path = request.url.path
+        if settings.api_key and path.startswith(settings.api_prefix):
+            supplied_key = request.headers.get("x-api-key")
+            if supplied_key != settings.api_key:
+                return JSONResponse(status_code=401, content={"detail": "Valid X-API-Key header required."})
+
+        client = request.client.host if request.client else "unknown"
+        now = time.time()
+        bucket = RATE_BUCKETS[client]
+        while bucket and bucket[0] <= now - 60:
+            bucket.popleft()
+        if len(bucket) >= settings.rate_limit_per_minute:
+            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Try again shortly."})
+        bucket.append(now)
+        return await call_next(request)
+
+
+app.add_middleware(GuardrailMiddleware)
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(
     CORSMiddleware,

@@ -78,6 +78,7 @@ class AnalysisService:
                         "projects": item["project_score"],
                         "certifications": item["certification_score"],
                     },
+                    "explanation": item["explanation"],
                 }
             )
         return {"job_id": job.id, "rankings": rankings}
@@ -91,6 +92,22 @@ class AnalysisService:
         priority_gaps = list(fit["missing_required_skills"])
         if experience_gap:
             priority_gaps.append(f"{experience_gap:g} years additional experience")
+        gap_details = [
+            {"skill": skill, "severity": "critical", "reason": "Required by the job description"}
+            for skill in fit["missing_required_skills"]
+        ]
+        gap_details.extend(
+            {"skill": skill, "severity": "important", "reason": "Preferred by the job description"}
+            for skill in fit["missing_preferred_skills"]
+        )
+        if experience_gap:
+            gap_details.append(
+                {
+                    "skill": "experience",
+                    "severity": "critical",
+                    "reason": f"Candidate is {experience_gap:g} years below the minimum requirement",
+                }
+            )
         return {
             "candidate_id": candidate_id,
             "job_id": job_id,
@@ -99,6 +116,7 @@ class AnalysisService:
             "missing_skills": fit["missing_required_skills"],
             "experience_gap_years": round(experience_gap, 2),
             "priority_gaps": priority_gaps,
+            "gap_details": gap_details,
         }
 
     def generate_interview_questions(
@@ -137,10 +155,22 @@ class AnalysisService:
             ]
         )
 
+        deduped_questions = list(dict.fromkeys(questions))[:limit]
+        if job_id:
+            store.save_questions(job_id, deduped_questions)
+
         return {
             "candidate_id": resume.id if resume else candidate_id or "",
             "job_id": job.id if job else job_id or "",
-            "questions": questions[:limit],
+            "questions": deduped_questions,
+        }
+
+    def get_cached_questions(self, job_id: str, candidate_id: str = "") -> dict[str, object]:
+        job_service.get_job(job_id)
+        return {
+            "candidate_id": candidate_id,
+            "job_id": job_id,
+            "questions": store.get_questions(job_id),
         }
 
     def predict_success(

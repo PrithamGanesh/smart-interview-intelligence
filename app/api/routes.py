@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, File, Query, UploadFile, status
+from fastapi import APIRouter, File, Query, Response, UploadFile, status
 
 from app.schemas.analysis import (
     CandidateRankingResponse,
@@ -27,9 +27,16 @@ from app.schemas.resume import ResumeCreate, ResumeResponse, ResumeUploadRespons
 from app.services.analysis_service import analysis_service
 from app.services.job_service import job_service
 from app.services.resume_service import resume_service
+from app.utils.taxonomy import load_skill_taxonomy
 
 
 router = APIRouter()
+
+
+@router.get("/health", tags=["health"])
+def health() -> dict[str, str]:
+    """Versioned health check for load balancers."""
+    return {"status": "healthy"}
 
 
 @router.post("/resumes", response_model=ResumeResponse, status_code=status.HTTP_201_CREATED, tags=["resumes"])
@@ -51,6 +58,12 @@ def list_resumes() -> object:
     return resume_service.list_resumes()
 
 
+@router.get("/candidates", response_model=list[ResumeResponse], tags=["candidates"])
+def list_candidates() -> object:
+    """Review endpoint: list/search candidate profiles."""
+    return resume_service.list_resumes()
+
+
 @router.get("/resumes/{resume_id}", response_model=ResumeResponse, tags=["resumes"])
 def get_resume(resume_id: str) -> object:
     """Get one submitted resume profile."""
@@ -61,6 +74,13 @@ def get_resume(resume_id: str) -> object:
 def get_resume_blueprint(resume_id: str) -> object:
     """Blueprint endpoint: get one candidate by id."""
     return resume_service.get_resume(resume_id)
+
+
+@router.delete("/resume/{resume_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["resume"])
+def delete_resume_blueprint(resume_id: str) -> Response:
+    """Review endpoint: delete a resume for right-to-erasure workflows."""
+    resume_service.delete_resume(resume_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/jobs", response_model=JobDescriptionResponse, status_code=status.HTTP_201_CREATED, tags=["jobs"])
@@ -129,6 +149,12 @@ def identify_skill_gaps(job_id: str, candidate_id: str) -> object:
     return analysis_service.identify_skill_gaps(candidate_id, job_id)
 
 
+@router.get("/candidates/{candidate_id}/gap", response_model=SkillGapResponse, tags=["candidates"])
+def identify_candidate_gap(candidate_id: str, job_id: str = Query(...)) -> object:
+    """Review endpoint: identify gaps for a candidate against a selected job."""
+    return analysis_service.identify_skill_gaps(candidate_id, job_id)
+
+
 @router.post("/interview-questions", response_model=InterviewQuestionResponse, tags=["analysis"])
 def generate_interview_questions(payload: InterviewQuestionRequest) -> object:
     """Generate role-specific interview questions."""
@@ -149,6 +175,19 @@ def generate_questions_blueprint(payload: InterviewQuestionRequest) -> object:
         count=payload.count,
         skills=payload.skills,
     )
+
+
+@router.get("/questions/{job_id}", response_model=InterviewQuestionResponse, tags=["questions"])
+def get_cached_questions(job_id: str, candidate_id: str = Query(default="")) -> object:
+    """Review endpoint: retrieve cached/generated question bank entries."""
+    return analysis_service.get_cached_questions(job_id=job_id, candidate_id=candidate_id)
+
+
+@router.get("/taxonomy/skills", tags=["taxonomy"])
+def list_skill_taxonomy() -> dict[str, object]:
+    """Review endpoint: expose the active skill taxonomy."""
+    taxonomy = load_skill_taxonomy()
+    return {"count": len(taxonomy), "skills": taxonomy}
 
 
 @router.post("/predict-success", response_model=SuccessPredictionResponse, tags=["prediction"])

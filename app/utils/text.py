@@ -6,76 +6,10 @@ import re
 from collections import Counter
 from typing import Optional
 
-
-MASTER_SKILLS: list[str] = [
-    "Python",
-    "FastAPI",
-    "TensorFlow",
-    "Docker",
-    "AWS",
-    "Kubernetes",
-    "Java",
-    "JavaScript",
-    "TypeScript",
-    "SQL",
-    "Django",
-    "Flask",
-    "React",
-    "Node.js",
-    "Azure",
-    "GCP",
-    "Machine Learning",
-    "Deep Learning",
-    "NLP",
-    "Pandas",
-    "NumPy",
-    "Scikit-Learn",
-    "PyTorch",
-    "Data Analysis",
-    "REST API",
-    "Microservices",
-    "CI/CD",
-    "Linux",
-    "Git",
-    "Communication",
-    "Leadership",
-]
+from app.utils.taxonomy import alias_to_skill, load_skill_taxonomy, normalize_skills
 
 
-SKILL_ALIASES: dict[str, tuple[str, ...]] = {
-    "python": ("python",),
-    "java": ("java",),
-    "javascript": ("javascript", "js"),
-    "typescript": ("typescript", "ts"),
-    "sql": ("sql", "postgres", "postgresql", "mysql", "sqlite"),
-    "fastapi": ("fastapi",),
-    "django": ("django",),
-    "flask": ("flask",),
-    "react": ("react", "reactjs"),
-    "node.js": ("node", "nodejs", "node.js"),
-    "aws": ("aws", "amazon web services"),
-    "azure": ("azure",),
-    "gcp": ("gcp", "google cloud"),
-    "docker": ("docker",),
-    "kubernetes": ("kubernetes", "k8s"),
-    "machine learning": ("machine learning", "ml"),
-    "deep learning": ("deep learning",),
-    "nlp": ("nlp", "natural language processing"),
-    "pandas": ("pandas",),
-    "numpy": ("numpy",),
-    "scikit-learn": ("scikit-learn", "sklearn"),
-    "pytorch": ("pytorch", "torch"),
-    "tensorflow": ("tensorflow",),
-    "data analysis": ("data analysis", "analytics"),
-    "rest api": ("rest api", "restful", "api development"),
-    "microservices": ("microservices", "microservice"),
-    "ci/cd": ("ci/cd", "github actions", "jenkins", "gitlab ci"),
-    "linux": ("linux",),
-    "git": ("git", "github", "gitlab"),
-    "communication": ("communication", "stakeholder management"),
-    "leadership": ("leadership", "mentoring", "team lead"),
-}
-
+MASTER_SKILLS: list[str] = [str(item["name"]) for item in load_skill_taxonomy()]
 DISPLAY_NAMES = {skill.lower(): skill for skill in MASTER_SKILLS}
 
 
@@ -126,19 +60,44 @@ def extract_skills(text: str) -> list[str]:
     normalized = f" {normalize_text(text).lower()} "
     found: set[str] = set()
 
-    for canonical, aliases in SKILL_ALIASES.items():
-        for alias in aliases:
-            pattern = r"(?<![a-z0-9])" + re.escape(alias.lower()) + r"(?![a-z0-9])"
-            if re.search(pattern, normalized):
-                found.add(DISPLAY_NAMES.get(canonical, canonical.title()))
-                break
+    for alias, canonical in alias_to_skill().items():
+        pattern = r"(?<![a-z0-9])" + re.escape(alias.lower()) + r"(?![a-z0-9])"
+        if re.search(pattern, normalized):
+            found.add(canonical)
 
     return sorted(found)
+
+
+def extract_experience_range(text: str) -> tuple[float, float]:
+    """Extract a min/max years-of-experience range from resume or JD text."""
+    normalized = normalize_text(text).lower().replace("–", "-").replace("—", "-")
+    ranges = re.findall(
+        r"(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\+?\s*(?:years|yrs)",
+        normalized,
+    )
+    if ranges:
+        values = [(float(low), float(high)) for low, high in ranges]
+        return min(low for low, _ in values), max(high for _, high in values)
+
+    values = _experience_values(normalized)
+    if values:
+        highest = max(values)
+        return highest, highest
+    return 0.0, 0.0
 
 
 def extract_years_experience(text: str) -> float:
     """Extract the highest explicit years-of-experience signal."""
     normalized = normalize_text(text).lower()
+    low, high = extract_experience_range(normalized)
+    if high > low:
+        return low
+    if high:
+        return high
+    return max(_experience_values(normalized), default=0.0)
+
+
+def _experience_values(normalized: str) -> list[float]:
     patterns = [
         r"(\d+(?:\.\d+)?)\+?\s*(?:years|yrs)\s+(?:of\s+)?experience",
         r"experience\s*(?:of|:)?\s*(\d+(?:\.\d+)?)\+?\s*(?:years|yrs)",
@@ -147,7 +106,7 @@ def extract_years_experience(text: str) -> float:
     values: list[float] = []
     for pattern in patterns:
         values.extend(float(match) for match in re.findall(pattern, normalized))
-    return max(values, default=0.0)
+    return values
 
 
 def extract_email(text: str) -> Optional[str]:
@@ -215,5 +174,4 @@ def extract_keywords(text: str, limit: int = 12) -> list[str]:
 
 def unique_sorted(values: list[str]) -> list[str]:
     """Return case-insensitive unique sorted strings."""
-    normalized = {value.strip().lower() for value in values if value.strip()}
-    return sorted(DISPLAY_NAMES.get(value, value.title()) for value in normalized)
+    return normalize_skills(values)

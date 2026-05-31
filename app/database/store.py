@@ -22,6 +22,7 @@ class InMemoryStore:
         self._resumes: dict[str, Resume] = {}
         self._jobs: dict[str, JobDescription] = {}
         self._match_results: dict[tuple[str, str], dict[str, object]] = {}
+        self._question_bank: dict[str, list[str]] = {}
 
     def save_resume(self, resume: Resume) -> Resume:
         self._resumes[resume.id] = resume
@@ -35,6 +36,13 @@ class InMemoryStore:
 
     def list_resumes(self) -> list[Resume]:
         return sorted(self._resumes.values(), key=lambda item: item.created_at, reverse=True)
+
+    def delete_resume(self, resume_id: str) -> None:
+        if resume_id not in self._resumes:
+            raise NotFoundError(f"Resume '{resume_id}' was not found.")
+        del self._resumes[resume_id]
+        for key in [key for key in self._match_results if key[0] == resume_id]:
+            del self._match_results[key]
 
     def save_job(self, job: JobDescription) -> JobDescription:
         self._jobs[job.id] = job
@@ -61,6 +69,16 @@ class InMemoryStore:
 
     def list_match_results(self) -> list[dict[str, object]]:
         return list(self._match_results.values())
+
+    def save_questions(self, job_id: str, questions: list[str]) -> list[str]:
+        existing = self._question_bank.setdefault(job_id, [])
+        for question in questions:
+            if question not in existing:
+                existing.append(question)
+        return existing
+
+    def get_questions(self, job_id: str) -> list[str]:
+        return list(self._question_bank.get(job_id, []))
 
 
 store = InMemoryStore()

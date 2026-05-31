@@ -31,4 +31,5 @@ class JobDescriptionResponse(BaseModel):
     required_skills: list[str]
     preferred_skills: list[str]
     min_years_experience: float
+    max_years_experience: float
     created_at: datetime

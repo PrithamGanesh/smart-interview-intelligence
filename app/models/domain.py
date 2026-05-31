@@ -50,6 +50,8 @@ class JobDescription:
     description: str
     skills: list[str]
     experience: float
+    preferred: list[str] = field(default_factory=list)
+    max_experience: float = 0.0
     created_at: datetime = field(default_factory=utc_now)
 
     @property
@@ -64,10 +66,15 @@ class JobDescription:
 
     @property
     def preferred_skills(self) -> list[str]:
-        """Preferred skills are not separate in the blueprint."""
-        return []
+        """Preferred skills extracted or supplied from the job description."""
+        return self.preferred
 
     @property
     def min_years_experience(self) -> float:
         """Backward-compatible alias."""
         return self.experience
+
+    @property
+    def max_years_experience(self) -> float:
+        """Upper bound from JD ranges when available."""
+        return self.max_experience or self.experience

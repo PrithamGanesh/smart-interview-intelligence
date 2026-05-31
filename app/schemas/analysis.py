@@ -58,6 +58,8 @@ class FitPredictionResponse(BaseModel):
     education_score: float
     project_score: float
     certification_score: float
+    explanation: list[str] = Field(default_factory=list)
+    thresholds: dict[str, float] = Field(default_factory=dict)
 
 
 class CandidateRankingResponse(BaseModel):
@@ -83,6 +85,7 @@ class RankedCandidate(BaseModel):
     name: str
     score: float
     feature_scores: dict[str, float]
+    explanation: list[str] = Field(default_factory=list)
 
 
 class RankResponse(BaseModel):
@@ -102,6 +105,7 @@ class SkillGapResponse(BaseModel):
     missing_skills: list[str]
     experience_gap_years: float
     priority_gaps: list[str]
+    gap_details: list[dict[str, str]] = Field(default_factory=list)
 
 
 class InterviewQuestionRequest(BaseModel):
@@ -138,6 +142,8 @@ class SuccessPredictionResponse(BaseModel):
     job_id: Optional[str]
     success_probability: float
     model: str
+    model_version: str = "unversioned"
+    feature_contributions: dict[str, float] = Field(default_factory=dict)
 
 
 class DashboardResponse(BaseModel):

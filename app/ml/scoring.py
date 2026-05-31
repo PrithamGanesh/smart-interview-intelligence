@@ -3,15 +3,16 @@
 from app.core.config import get_settings
 from app.ml.embeddings import cosine_similarity_score
 from app.models.domain import JobDescription, Resume
+from app.utils.taxonomy import normalize_skills
 
 
 def score_candidate_fit(resume: Resume, job: JobDescription) -> dict[str, object]:
     """Score a resume against a job description using blueprint weights."""
     settings = get_settings()
     weights = settings.ranking_weights
-    candidate_skills = set(resume.skills)
-    required = set(job.required_skills)
-    preferred = set(job.preferred_skills)
+    candidate_skills = set(normalize_skills(resume.skills))
+    required = set(normalize_skills(job.required_skills))
+    preferred = set(normalize_skills(job.preferred_skills))
 
     matched_required = sorted(candidate_skills & required)
     missing_required = sorted(required - candidate_skills)
@@ -41,6 +42,13 @@ def score_candidate_fit(resume: Resume, job: JobDescription) -> dict[str, object
         2,
     )
     recommendation = classify_fit(fit_score, missing_required)
+    explanation = [
+        f"Skill Match {round(skill_score * weights.skill_match * 100, 2)}/{round(weights.skill_match * 100, 2)}",
+        f"Experience {round(experience_score * weights.experience * 100, 2)}/{round(weights.experience * 100, 2)}",
+        f"Education {round(education_score * weights.education * 100, 2)}/{round(weights.education * 100, 2)}",
+        f"Projects {round(project_score * weights.projects * 100, 2)}/{round(weights.projects * 100, 2)}",
+        f"Certifications {round(certification_score * weights.certifications * 100, 2)}/{round(weights.certifications * 100, 2)}",
+    ]
 
     return {
         "candidate_id": resume.id,
@@ -63,6 +71,8 @@ def score_candidate_fit(resume: Resume, job: JobDescription) -> dict[str, object
         "certification_score": round(certification_score * 100, 2),
         "candidate_years_experience": resume.years_experience,
         "required_years_experience": job.min_years_experience,
+        "explanation": explanation,
+        "thresholds": {"strong_fit": 85, "good_fit": 70, "possible_fit": 50},
     }
 
 
