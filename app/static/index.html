@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Interview Intelligence</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace">
+        <header class="topbar">
+          <div class="brand">
+            <img class="logo" src="/static/logo.svg" alt="Smart Interview Intelligence logo" />
+            <div>
+              <p class="eyebrow">Recruiter Workspace</p>
+              <h1>Smart Interview Intelligence</h1>
+            </div>
+          </div>
+          <div class="api-key">
+            <label for="api-key">API key</label>
+            <input id="api-key" type="password" autocomplete="off" placeholder="Optional" />
+          </div>
+        </header>
+
+        <nav class="steps" aria-label="Workflow steps">
+          <button class="step active" type="button" data-step="1">
+            <span class="step-index">01</span>
+            <span>Resume</span>
+          </button>
+          <button class="step" type="button" data-step="2">
+            <span class="step-index">02</span>
+            <span>Job</span>
+          </button>
+          <button class="step" type="button" data-step="3">
+            <span class="step-index">03</span>
+            <span>Results</span>
+          </button>
+        </nav>
+        <div class="progress"><span id="progress-fill"></span></div>
+
+        <section class="panel active" id="step-1">
+          <div class="panel-head">
+            <div>
+              <h2>Candidate Profile</h2>
+              <p class="subtle">Resume intake</p>
+            </div>
+            <span class="pill" id="resume-quality">Draft</span>
+          </div>
+          <div class="field-band">
+            <div class="form-grid">
+              <label>
+                Candidate name
+                <input id="candidate-name" type="text" value="John Doe" />
+              </label>
+              <label>
+                Email
+                <input id="candidate-email" type="email" value="john@example.com" />
+              </label>
+            </div>
+            <div class="dropzone" id="resume-dropzone">
+              <input id="resume-file" type="file" accept=".txt,.pdf,.docx" />
+              <div>
+                <strong>Resume file</strong>
+                <span id="resume-file-name">No file selected</span>
+              </div>
+              <button class="ghost small" id="upload-resume" type="button">Upload</button>
+            </div>
+          </div>
+          <label>
+            Resume text
+            <textarea id="resume-text">John Doe
+john@example.com
+B.Tech
+3 years experience with Python, FastAPI, Docker, AWS and Machine Learning.
+Projects: Built an interview intelligence platform.
+Certified AWS Cloud Practitioner.</textarea>
+          </label>
+          <div class="meta-row">
+            <span id="resume-count">0 characters</span>
+            <span id="resume-skills">Skills pending</span>
+          </div>
+          <div class="actions">
+            <button class="primary" id="save-resume" type="button"><span class="button-icon">+</span>Save Resume</button>
+            <button class="ghost" id="clear-resume" type="button">Clear</button>
+            <span class="status" id="resume-status">No resume selected</span>
+          </div>
+        </section>
+
+        <section class="panel" id="step-2">
+          <div class="panel-head">
+            <div>
+              <h2>Role Requirements</h2>
+              <p class="subtle">Job description analysis</p>
+            </div>
+            <span class="pill" id="job-quality">Draft</span>
+          </div>
+          <div class="form-grid">
+            <label>
+              Job title
+              <input id="job-title" type="text" value="Python Developer" />
+            </label>
+            <label>
+              Preferred skills
+              <input id="preferred-skills" type="text" value="Communication, Leadership" />
+            </label>
+          </div>
+          <label>
+            Job description
+            <textarea id="job-description">Need Python developer with FastAPI, Docker, AWS, SQL and 2-4 years experience. Strong communication is preferred.</textarea>
+          </label>
+          <div class="chip-preview" id="preferred-preview"></div>
+          <div class="actions">
+            <button class="primary" id="save-job" type="button"><span class="button-icon">+</span>Save Job</button>
+            <button class="ghost" id="sample-job" type="button">Sample</button>
+            <span class="status" id="job-status">No job selected</span>
+          </div>
+        </section>
+
+        <section class="panel" id="step-3">
+          <div class="panel-head">
+            <div>
+              <h2>Decision View</h2>
+              <p class="subtle">Candidate and role intelligence</p>
+            </div>
+            <button class="primary" id="run-all" type="button">Run All</button>
+          </div>
+          <div class="insights">
+            <div class="metric">
+              <span class="metric-label">Match</span>
+              <strong id="metric-match">--</strong>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Success</span>
+              <strong id="metric-success">--</strong>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Gaps</span>
+              <strong id="metric-gaps">--</strong>
+            </div>
+          </div>
+          <div class="result-actions">
+            <button type="button" data-run="match"><span class="button-icon">%</span>Match</button>
+            <button type="button" data-run="rank"><span class="button-icon">#</span>Rank</button>
+            <button type="button" data-run="gap"><span class="button-icon">!</span>Gap</button>
+            <button type="button" data-run="questions"><span class="button-icon">?</span>Questions</button>
+            <button type="button" data-run="predict"><span class="button-icon">*</span>Predict</button>
+          </div>
+          <div class="results">
+            <article class="selection-panel">
+              <h2>Current Selection</h2>
+              <dl>
+                <div>
+                  <dt>Candidate</dt>
+                  <dd id="selected-candidate">None</dd>
+                </div>
+                <div>
+                  <dt>Job</dt>
+                  <dd id="selected-job">None</dd>
+                </div>
+              </dl>
+            </article>
+            <article class="output-panel">
+              <div class="output-head">
+                <h2>Output</h2>
+                <span id="output-mode">Ready</span>
+              </div>
+              <div id="output" class="output-view">Create or select a resume and job, then run an action.</div>
+            </article>
+          </div>
+        </section>
+      </section>
+
+      <aside class="sidebar">
+        <section class="side-section">
+          <div class="side-head">
+            <h2>Candidates</h2>
+            <span id="candidate-total">0</span>
+          </div>
+          <div id="candidate-list" class="list empty">No candidates yet</div>
+        </section>
+        <section class="side-section">
+          <div class="side-head">
+            <h2>Jobs</h2>
+            <span id="job-total">0</span>
+          </div>
+          <div id="job-list" class="list empty">No jobs yet</div>
+        </section>
+      </aside>
+    </main>
+    <div class="toast-pop" id="toast" role="status" aria-live="polite"></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

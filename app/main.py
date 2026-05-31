@@ -6,9 +6,12 @@ import time
 from collections import defaultdict, deque
 from uuid import uuid4
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.routes import router
@@ -78,8 +81,30 @@ class GuardrailMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Set browser security headers for the vanilla dashboard."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self'; "
+            "img-src 'self' data:; "
+            "font-src 'self'; "
+            "connect-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "frame-ancestors 'none'"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "same-origin"
+        return response
+
+
 app.add_middleware(GuardrailMiddleware)
 app.add_middleware(MetricsMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -90,6 +115,8 @@ app.add_middleware(
 
 register_exception_handlers(app)
 app.include_router(router, prefix=settings.api_prefix)
+static_dir = Path(__file__).resolve().parent / "static"
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 try:
     from prometheus_fastapi_instrumentator import Instrumentator
@@ -99,14 +126,10 @@ except Exception:
     pass
 
 
-@app.get("/", tags=["health"])
-def root() -> dict[str, str]:
-    """Return basic service metadata."""
-    return {
-        "service": settings.project_name,
-        "version": settings.version,
-        "status": "ok",
-    }
+@app.get("/", tags=["ui"])
+def root() -> FileResponse:
+    """Serve the recruiter workflow UI."""
+    return FileResponse(static_dir / "index.html")
 
 
 @app.get("/health", tags=["health"])

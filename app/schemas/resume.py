@@ -24,6 +24,7 @@ class ResumeResponse(BaseModel):
     name: str
     candidate_name: str
     email: Optional[str]
+    raw_text: str
     skills: list[str]
     experience: float
     years_experience: float

@@ -4,6 +4,18 @@ from app.database.store import store
 from app.main import app
 
 
+def test_dashboard_ui_is_served_at_root():
+    client = TestClient(app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Smart Interview Intelligence" in response.text
+    assert 'id="save-resume"' in response.text
+    assert "script-src 'self'" in response.headers["content-security-policy"]
+    assert "'unsafe-eval'" not in response.headers["content-security-policy"]
+
+
 def test_blueprint_workflow():
     client = TestClient(app)
 
@@ -109,6 +121,7 @@ def test_resume_text_is_masked_at_rest_and_can_be_erased():
 
     assert response.status_code == 201
     resume_id = response.json()["id"]
+    assert "priya@example.com" not in response.json()["raw_text"]
     stored = store.get_resume(resume_id)
     assert "priya@example.com" not in stored.raw_text
     assert "+1 555 123 4567" not in stored.raw_text
