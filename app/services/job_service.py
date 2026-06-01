@@ -39,8 +39,13 @@ class JobService:
     def get_job(self, job_id: str) -> JobDescription:
         return store.get_job(job_id)
 
-    def list_jobs(self) -> list[JobDescription]:
-        return store.list_jobs()
+    def list_jobs(self, limit: int = 100, offset: int = 0) -> tuple[list[JobDescription], int]:
+        """🔧 FIXED: Added pagination support."""
+        return store.list_jobs(limit=limit, offset=offset)
+
+    def delete_job(self, job_id: str) -> None:
+        """🔧 ADDED: Delete job method (was missing)."""
+        store.delete_job(job_id)
 
 
 job_service = JobService()

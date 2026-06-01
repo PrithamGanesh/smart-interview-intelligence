@@ -6,6 +6,7 @@ fallbacks for local development and tests.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -21,6 +22,8 @@ from app.utils.text import (
     extract_years_experience,
     normalize_text,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def extract_text_from_bytes(content: bytes, filename: str = "resume.txt") -> str:
@@ -71,16 +74,21 @@ def _extract_pdf_text(content: bytes) -> str:
         import pdfplumber
 
         with pdfplumber.open(io.BytesIO(content)) as pdf:
-            return "\n".join(page.extract_text() or "" for page in pdf.pages)
-    except Exception:
-        pass
+            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+            if text.strip():
+                return text
+    except Exception as exc:
+        logger.warning(f"pdfplumber failed to extract PDF text: {exc}")
 
     try:
         import fitz
 
         with fitz.open(stream=content, filetype="pdf") as document:
-            return "\n".join(page.get_text() for page in document)
+            text = "\n".join(page.get_text() for page in document)
+            if text.strip():
+                return text
     except Exception as exc:
+        logger.error(f"Both PDF parsers failed to extract text: {exc}")
         raise ValueError("Unable to parse PDF. Install pdfplumber or PyMuPDF, or upload text content.") from exc
 
 

@@ -1,11 +1,14 @@
 """Resume ingestion and extraction service."""
 
+import logging
 from uuid import uuid4
 
 from app.database.store import store
 from app.models.domain import Resume
 from app.schemas.resume import ResumeCreate
 from app.services.resume_parser import extract_text_from_bytes, parse_resume_text
+
+logger = logging.getLogger(__name__)
 
 
 class ResumeService:
@@ -47,8 +50,9 @@ class ResumeService:
     def get_resume(self, resume_id: str) -> Resume:
         return store.get_resume(resume_id)
 
-    def list_resumes(self) -> list[Resume]:
-        return store.list_resumes()
+    def list_resumes(self, limit: int = 100, offset: int = 0) -> tuple[list[Resume], int]:
+        """🔧 FIXED: Added pagination support."""
+        return store.list_resumes(limit=limit, offset=offset)
 
     def delete_resume(self, resume_id: str) -> None:
         store.delete_resume(resume_id)

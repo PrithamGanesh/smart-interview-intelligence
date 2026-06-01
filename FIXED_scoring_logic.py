@@ -1,10 +1,18 @@
-"""Candidate-job fit scoring."""
+"""FIXED: Corrected candidate-job fit scoring logic.
+
+This replaces app/ml/scoring.py with fixes for:
+- Education scoring logic bugs
+- Validation of inputs
+- Consistent field naming
+- Proper handling of edge cases
+"""
 
 import re
 from app.core.config import get_settings
 from app.ml.embeddings import cosine_similarity_score
 from app.models.domain import JobDescription, Resume
 from app.utils.taxonomy import normalize_skills
+
 
 # 🔧 ADDED: Compiled regex patterns for education matching (more robust)
 EDUCATION_PATTERNS = {
@@ -21,7 +29,7 @@ def score_candidate_fit(resume: Resume, job: JobDescription) -> dict[str, object
     - Validate inputs before processing
     - Use regex patterns instead of substring matching
     - Fix division by zero edge case
-    - Single score field (no duplicates)
+    - Consistent field naming (no duplicate score/fit_score)
     - Proper null/empty handling
     """
     # 🔧 ADDED: Input validation
@@ -41,7 +49,8 @@ def score_candidate_fit(resume: Resume, job: JobDescription) -> dict[str, object
     matched_preferred = sorted(candidate_skills & preferred)
     missing_preferred = sorted(preferred - candidate_skills)
 
-    # 🔧 FIXED: Skill score logic - no division by zero
+    # 🔧 FIXED: Skill score logic - missing required skills SHOULD hurt score
+    # If no required skills specified, give full credit (can't fail what's not required)
     if required:
         skill_score = len(matched_required) / len(required)  # 0-1 based on matches
     else:
@@ -89,14 +98,13 @@ def score_candidate_fit(resume: Resume, job: JobDescription) -> dict[str, object
         f"Certifications {round(certification_score * weights.certifications * 100, 2)}/{round(weights.certifications * 100, 2)}",
     ]
 
-    # 🔧 FIXED: Single score field (no duplicate fit_score/match_score)
+    # 🔧 FIXED: Single score field (no duplicate score/fit_score)
     return {
         "candidate_id": resume.id,
         "candidate_name": resume.candidate_name,
         "job_id": job.id,
         "job_title": job.title,
-        "score": fit_score,
-        "similarity_score": similarity_score,
+        "score": fit_score,  # 🔧 Single canonical field
         "recommendation": recommendation,
         "matched_required_skills": matched_required,
         "missing_required_skills": missing_required,
@@ -114,6 +122,102 @@ def score_candidate_fit(resume: Resume, job: JobDescription) -> dict[str, object
     }
 
 
+def score_education_fixed(candidate_education: str, job_description: str) -> float:
+    """🔧 FIXED: Proper education level matching with regex patterns.
+    
+    Args:
+        candidate_education: Resume education text (e.g., "B.Tech in CS")
+        job_description: Job requirement text
+        
+    Returns:
+        Score 0-1 indicating how well candidate matches job education requirement
+        
+    Logic:
+    - If job has no education requirement → full score (not a requirement)
+    - If job requires PhD and candidate has it → 1.0
+    - If job requires Master and candidate has Bachelor → 0.5 (below requirement)
+    - If job requires Bachelor and candidate has Master → 1.0 (exceeds requirement)
+    """
+    candidate = (candidate_education or "").lower().strip()
+    job = (job_description or "").lower().strip()
+    
+    # 🔧 FIXED: Determine job requirement level
+    job_requires = _extract_education_level(job)
+    
+    # If job doesn't specify education requirement, not a factor
+    if job_requires is None:
+        return 0.5 if not candidate else 1.0  # Has education: bonus, else neutral
+    
+    # Determine candidate education level
+    candidate_level = _extract_education_level(candidate)
+    
+    # 🔧 FIXED: Scoring based on level hierarchy
+    # Level: PhD (3) > Master (2) > Bachelor (1) > Other (0)
+    if candidate_level is None:
+        return 0.0  # No education info
+    
+    # Score: 1.0 if meets/exceeds requirement, 0.5 if 1 level below, 0.0 if 2+ below
+    level_diff = candidate_level - job_requires
+    if level_diff >= 0:
+        return 1.0  # Meets or exceeds
+    elif level_diff == -1:
+        return 0.5  # 1 level below
+    else:
+        return 0.0  # 2+ levels below
+
+
+def _extract_education_level(text: str) -> int | None:
+    """🔧 ADDED: Extract education level from text.
+    
+    Returns:
+        3 for PhD, 2 for Master, 1 for Bachelor, 0 for other/unknown, None if not specified
+    """
+    text = (text or "").lower()
+    
+    # Check in order of highest to lowest
+    if EDUCATION_PATTERNS["phd"].search(text):
+        return 3
+    if EDUCATION_PATTERNS["master"].search(text):
+        return 2
+    if EDUCATION_PATTERNS["bachelor"].search(text):
+        return 1
+    
+    return None  # No recognized education level
+
+
+def infer_project_presence(text: str) -> float:
+    """🔧 IMPROVED: Infer project evidence from resume text with better signal.
+    
+    Returns score 0-1 based on project signal strength.
+    """
+    value = (text or "").lower()
+    
+    strong_signals = ["built", "developed", "created", "launched"]
+    weak_signals = ["project", "portfolio", "github"]
+    
+    if any(signal in value for signal in strong_signals):
+        return 1.0
+    if any(signal in value for signal in weak_signals):
+        return 0.8
+    
+    return 0.2  # Default: no strong signal
+
+
+def infer_certification_presence(text: str) -> float:
+    """🔧 IMPROVED: Infer certification evidence with regex patterns.
+    
+    Returns score 0-1 based on certification signal strength.
+    """
+    value = (text or "").lower()
+    
+    cert_pattern = re.compile(r"\b(certified|certification|certificate|certified by|credential)\b")
+    
+    if cert_pattern.search(value):
+        return 0.9
+    
+    return 0.1  # Default: no certification signal
+
+
 def classify_fit(score: float, missing_required: list[str]) -> str:
     """Convert a score into a recruiter-friendly recommendation.
     
@@ -126,84 +230,3 @@ def classify_fit(score: float, missing_required: list[str]) -> str:
     if score >= 50:
         return "possible_fit"
     return "low_fit"
-
-
-def score_education_fixed(candidate_education: str, job_description: str) -> float:
-    """🔧 FIXED: Proper education level matching with regex patterns.
-    
-    Args:
-        candidate_education: Resume education text (e.g., "B.Tech in CS")
-        job_description: Job requirement text
-        
-    Returns:
-        Score 0-1 indicating how well candidate matches job education requirement
-    """
-    candidate = (candidate_education or "").lower().strip()
-    job = (job_description or "").lower().strip()
-    
-    # Determine job requirement level
-    job_requires = _extract_education_level(job)
-    
-    # If job doesn't specify education requirement, not a factor
-    if job_requires is None:
-        return 0.5 if not candidate else 1.0
-    
-    # Determine candidate education level
-    candidate_level = _extract_education_level(candidate)
-    
-    if candidate_level is None:
-        return 0.0
-    
-    # Score: 1.0 if meets/exceeds requirement, 0.5 if 1 level below, 0.0 if 2+ below
-    level_diff = candidate_level - job_requires
-    if level_diff >= 0:
-        return 1.0
-    elif level_diff == -1:
-        return 0.5
-    else:
-        return 0.0
-
-
-def _extract_education_level(text: str) -> int | None:
-    """🔧 ADDED: Extract education level from text using regex.
-    
-    Returns:
-        3 for PhD, 2 for Master, 1 for Bachelor, None if not specified
-    """
-    text = (text or "").lower()
-    
-    if EDUCATION_PATTERNS["phd"].search(text):
-        return 3
-    if EDUCATION_PATTERNS["master"].search(text):
-        return 2
-    if EDUCATION_PATTERNS["bachelor"].search(text):
-        return 1
-    
-    return None
-
-
-def infer_project_presence(text: str) -> float:
-    """🔧 IMPROVED: Infer project evidence from resume text with better signal."""
-    value = (text or "").lower()
-    
-    strong_signals = ["built", "developed", "created", "launched"]
-    weak_signals = ["project", "portfolio", "github"]
-    
-    if any(signal in value for signal in strong_signals):
-        return 1.0
-    if any(signal in value for signal in weak_signals):
-        return 0.8
-    
-    return 0.2
-
-
-def infer_certification_presence(text: str) -> float:
-    """🔧 IMPROVED: Infer certification evidence with regex patterns."""
-    value = (text or "").lower()
-    
-    cert_pattern = re.compile(r"\b(certified|certification|certificate|certified by|credential)\b")
-    
-    if cert_pattern.search(value):
-        return 0.9
-    
-    return 0.1

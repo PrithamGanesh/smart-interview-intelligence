@@ -7,10 +7,13 @@ local TF-IDF cosine similarity so endpoints remain runnable offline.
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from hashlib import sha256
 
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache
@@ -18,8 +21,11 @@ def _sentence_transformer():
     try:
         from sentence_transformers import SentenceTransformer
 
-        return SentenceTransformer(get_settings().embedding_model_name)
-    except Exception:
+        model = SentenceTransformer(get_settings().embedding_model_name)
+        logger.info(f"Loaded Sentence Transformer model: {get_settings().embedding_model_name}")
+        return model
+    except Exception as exc:
+        logger.warning(f"Failed to load Sentence Transformer, falling back to TF-IDF: {exc}")
         return None
 
 

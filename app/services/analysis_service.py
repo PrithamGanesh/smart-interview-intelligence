@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from typing import Optional
 
@@ -13,6 +14,8 @@ from app.schemas.analysis import ExtractionResponse
 from app.services.job_service import job_service
 from app.services.resume_service import resume_service
 from app.utils.text import extract_keywords, extract_skills, extract_years_experience
+
+logger = logging.getLogger(__name__)
 
 
 class AnalysisService:
@@ -42,19 +45,27 @@ class AnalysisService:
             "similarity_score": fit["similarity_score"],
         }
 
-    def rank_candidates(self, job_id: str) -> dict[str, object]:
+    def rank_candidates(self, job_id: str, limit: int = 50) -> dict[str, object]:
+        """🔧 FIXED: Added pagination and batch saves for performance."""
         job = job_service.get_job(job_id)
-        rankings = [score_candidate_fit(resume, job) for resume in resume_service.list_resumes()]
-        rankings.sort(key=lambda item: item["fit_score"], reverse=True)
-        for index, item in enumerate(rankings, start=1):
-            store.save_match_result(str(item["candidate_id"]), job_id, float(item["score"]), rank=index)
+        resumes, total = resume_service.list_resumes(limit=limit)  # Paginated
+        rankings = [score_candidate_fit(resume, job) for resume in resumes]
+        rankings.sort(key=lambda item: item["score"], reverse=True)
+        
+        # 🔧 Use batch save instead of individual calls
+        batch_results = [
+            (str(item["candidate_id"]), job_id, float(item["score"]), index)
+            for index, item in enumerate(rankings, start=1)
+        ]
+        store.batch_save_match_results(batch_results)
+        
         return {
             "job_id": job.id,
             "job_title": job.title,
             "rankings": rankings,
         }
 
-    def rank_candidates_blueprint(self, job_id: str, candidate_ids: Optional[list[str]] = None) -> dict[str, object]:
+    def rank_candidates_blueprint(self, job_id: str, candidate_ids: Optional[list[str]] = None, limit: int = 100) -> dict[str, object]:
         job = job_service.get_job(job_id)
         candidates = resume_service.list_resumes()
         if candidate_ids:
@@ -196,24 +207,31 @@ class AnalysisService:
         result["job_id"] = job_id
         return result
 
-    def recruiter_dashboard(self, job_id: Optional[str] = None) -> dict[str, object]:
-        resumes = resume_service.list_resumes()
-        jobs = [job_service.get_job(job_id)] if job_id else job_service.list_jobs()
+    def recruiter_dashboard(self, job_id: Optional[str] = None, limit_top: int = 5) -> dict[str, object]:
+        """🔧 FIXED: Added pagination support to prevent O(N*M) computation."""
+        resumes, _ = resume_service.list_resumes(limit=100)  # Paginated
+        jobs = [job_service.get_job(job_id)] if job_id else list(job_service.list_jobs(limit=10)[0])  # Paginated
+        
         scored: list[dict[str, object]] = []
         for job in jobs:
-            scored.extend(score_candidate_fit(resume, job) for resume in resumes)
+            for resume in resumes:
+                try:
+                    scored.append(score_candidate_fit(resume, job))
+                except Exception as exc:
+                    logger.error(f"Failed to score {resume.id} against {job.id}: {exc}")
+                    continue
 
         recommendation_counts = Counter(str(item["recommendation"]) for item in scored)
-        all_scores = [float(item["fit_score"]) for item in scored]
+        all_scores = [float(item["score"]) for item in scored]
         skill_counts = Counter(skill for resume in resumes for skill in resume.skills)
 
-        scored.sort(key=lambda item: item["fit_score"], reverse=True)
+        scored.sort(key=lambda item: item["score"], reverse=True)
         return {
             "total_candidates": len(resumes),
             "total_jobs": len(jobs),
             "average_fit_score": round(sum(all_scores) / len(all_scores), 2) if all_scores else 0.0,
             "recommendation_counts": dict(recommendation_counts),
-            "top_candidates": scored[:5],
+            "top_candidates": scored[:limit_top],
             "most_common_skills": [skill for skill, _ in skill_counts.most_common(10)],
         }
 

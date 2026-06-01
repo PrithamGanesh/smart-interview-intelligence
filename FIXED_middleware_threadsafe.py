@@ -1,4 +1,7 @@
-"""FastAPI application entry point."""
+"""FIXED: Thread-safe middleware for metrics and rate limiting.
+
+Replaces the unsafe global collections in main.py with thread-safe versions.
+"""
 
 import json
 import logging
@@ -6,27 +9,18 @@ import threading
 import time
 from collections import defaultdict, deque
 from uuid import uuid4
-
-from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
-from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
-
-from app.api.routes import router
-from app.core.config import get_settings
-from app.core.exceptions import register_exception_handlers
+from fastapi.responses import JSONResponse
 
 
-settings = get_settings()
 logger = logging.getLogger("smart_interview")
-logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-# 🔧 FIXED: Thread-safe metrics collector
+
 class ThreadSafeMetricsCollector:
-    """Thread-safe metrics collection with locks."""
+    """🔧 Thread-safe metrics collection with locks."""
     
     def __init__(self):
         self.request_count = 0
@@ -51,9 +45,9 @@ class ThreadSafeMetricsCollector:
                 "max_latency_ms": round(max(self.request_latencies) * 1000, 2),
             }
 
-# 🔧 FIXED: Thread-safe rate limiter
+
 class ThreadSafeRateLimiter:
-    """Thread-safe rate limiter for per-client limits."""
+    """🔧 Thread-safe rate limiter for per-client limits."""
     
     def __init__(self, limit_per_minute: int = 120):
         self.limit_per_minute = limit_per_minute
@@ -79,15 +73,10 @@ class ThreadSafeRateLimiter:
             bucket.append(now)
             return True
 
+
 # Global thread-safe instances
 metrics_collector = ThreadSafeMetricsCollector()
-rate_limiter = ThreadSafeRateLimiter(limit_per_minute=settings.rate_limit_per_minute)
-
-app = FastAPI(
-    title=settings.project_name,
-    version=settings.version,
-    description="AI-assisted resume screening, ranking, skill gap analysis, and interview question generation.",
-)
+rate_limiter = ThreadSafeRateLimiter(limit_per_minute=120)
 
 
 class MetricsMiddleware(BaseHTTPMiddleware):
@@ -139,13 +128,17 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 class GuardrailMiddleware(BaseHTTPMiddleware):
     """🔧 FIXED: Thread-safe API key and rate limiting."""
 
+    def __init__(self, app, settings):
+        super().__init__(app)
+        self.settings = settings
+
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         
         # API key check
-        if settings.api_key and path.startswith(settings.api_prefix):
+        if self.settings.api_key and path.startswith(self.settings.api_prefix):
             supplied_key = request.headers.get("x-api-key")
-            if supplied_key != settings.api_key:
+            if supplied_key != self.settings.api_key:
                 return JSONResponse(
                     status_code=401, 
                     content={"detail": "Valid X-API-Key header required."}
@@ -165,7 +158,7 @@ class GuardrailMiddleware(BaseHTTPMiddleware):
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Set browser security headers for the vanilla dashboard."""
 
-    async def dispatch(self, request, call_next):
+    async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
@@ -179,61 +172,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "frame-ancestors 'none'"
         )
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
         return response
 
 
-app.add_middleware(GuardrailMiddleware)
-app.add_middleware(MetricsMiddleware)
-app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-register_exception_handlers(app)
-app.include_router(router, prefix=settings.api_prefix)
-static_dir = Path(__file__).resolve().parent / "static"
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-try:
-    from prometheus_fastapi_instrumentator import Instrumentator
-
-    Instrumentator().instrument(app).expose(app)
-except Exception:
-    pass
-
-
-@app.get("/", tags=["ui"])
-def root() -> FileResponse:
-    """Serve the recruiter workflow UI."""
-    return FileResponse(static_dir / "index.html")
-
-
-@app.get("/health", tags=["health"])
-def health() -> dict[str, str]:
-    """Health check endpoint for load balancers and uptime probes."""
-    return {"status": "healthy"}
-
-
-@app.get("/metrics", response_class=PlainTextResponse, tags=["monitoring"])
-def metrics() -> str:
-    """Prometheus-compatible fallback metrics."""
-    total_latency = sum(REQUEST_LATENCY_SECONDS)
-    avg_latency = total_latency / len(REQUEST_LATENCY_SECONDS) if REQUEST_LATENCY_SECONDS else 0.0
-    return "\n".join(
-        [
-            "# HELP request_count Total HTTP requests handled.",
-            "# TYPE request_count counter",
-            f"request_count {REQUEST_COUNT}",
-            "# HELP latency Average request latency in seconds.",
-            "# TYPE latency gauge",
-            f"latency {avg_latency:.6f}",
-            "# HELP prediction_time Candidate prediction timer placeholder.",
-            "# TYPE prediction_time gauge",
-            "prediction_time 0",
-        ]
-    )
+def setup_middleware(app: FastAPI, settings) -> None:
+    """🔧 Consolidated middleware setup with correct ordering."""
+    # Order matters: security first, then metrics, then app logic
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(MetricsMiddleware)
+    app.add_middleware(GuardrailMiddleware, settings=settings)
